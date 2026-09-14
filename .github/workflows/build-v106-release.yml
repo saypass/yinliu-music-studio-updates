@@ -42,7 +42,7 @@ jobs:
       - name: Build Windows installer
         shell: bash
         working-directory: source
-        run: node node_modules/electron-builder/cli.js --win nsis --x64
+        run: node node_modules/electron-builder/cli.js --win nsis --x64 --publish never
       - name: Upload Windows release assets
         shell: bash
         working-directory: source
@@ -81,7 +81,7 @@ jobs:
           npm run desktop:prepare
       - name: Build Apple Silicon DMG and update ZIP
         working-directory: source
-        run: node node_modules/electron-builder/cli.js --mac dmg zip --arm64
+        run: node node_modules/electron-builder/cli.js --mac dmg zip --arm64 --publish never
       - name: Upload macOS release assets
         working-directory: source
         env:
