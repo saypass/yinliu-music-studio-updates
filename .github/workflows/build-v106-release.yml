@@ -1,0 +1,116 @@
+name: Build Laura Music v1.0.6 release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  RELEASE_TAG: v1.0.6
+  BUNDLE_ASSET: laura-v106-build-source.enc
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Download encrypted build source
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "$BUNDLE_ASSET" --dir bundle
+      - name: Decrypt and extract source
+        shell: bash
+        env:
+          BUNDLE_PASSWORD: ${{ secrets.LAURA_BUILD_BUNDLE_PASSWORD }}
+        run: |
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in "bundle/$BUNDLE_ASSET" -out source.tar.gz -pass env:BUNDLE_PASSWORD
+          mkdir source
+          tar -xzf source.tar.gz -C source
+      - name: Prepare dependencies and keyless configuration
+        shell: bash
+        working-directory: source
+        run: |
+          cp build/config.seed.json config.local.json
+          npm ci
+          npm run desktop:prepare
+      - name: Build Windows installer
+        shell: bash
+        working-directory: source
+        run: node node_modules/electron-builder/cli.js --win nsis --x64
+      - name: Upload Windows release assets
+        shell: bash
+        working-directory: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp "dist/劳拉音乐工作平台-1.0.6-Setup-x64.exe" dist/yinliu-music-studio-setup-1.0.6.exe
+          cp "dist/劳拉音乐工作平台-1.0.6-Setup-x64.exe.blockmap" dist/yinliu-music-studio-setup-1.0.6.exe.blockmap
+          gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/latest.yml dist/yinliu-music-studio-setup-1.0.6.exe dist/yinliu-music-studio-setup-1.0.6.exe.blockmap
+
+  macos:
+    needs: windows
+    runs-on: macos-14
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Download encrypted build source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "$BUNDLE_ASSET" --dir bundle
+      - name: Decrypt and extract source
+        env:
+          BUNDLE_PASSWORD: ${{ secrets.LAURA_BUILD_BUNDLE_PASSWORD }}
+        run: |
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in "bundle/$BUNDLE_ASSET" -out source.tar.gz -pass env:BUNDLE_PASSWORD
+          mkdir source
+          tar -xzf source.tar.gz -C source
+      - name: Prepare dependencies and keyless configuration
+        working-directory: source
+        run: |
+          cp build/config.seed.json config.local.json
+          npm ci
+          npm run desktop:prepare
+      - name: Build Apple Silicon DMG and update ZIP
+        working-directory: source
+        run: node node_modules/electron-builder/cli.js --mac dmg zip --arm64
+      - name: Upload macOS release assets
+        working-directory: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp "dist/劳拉音乐工作平台-1.0.6-arm64.zip" dist/yinliu-music-studio-1.0.6-arm64-mac.zip
+          cp "dist/劳拉音乐工作平台-1.0.6-arm64.zip.blockmap" dist/yinliu-music-studio-1.0.6-arm64-mac.zip.blockmap
+          cp "dist/劳拉音乐工作平台-1.0.6-arm64.dmg" dist/yinliu-music-studio-1.0.6.dmg
+          cp "dist/劳拉音乐工作平台-1.0.6-arm64.dmg.blockmap" dist/yinliu-music-studio-1.0.6.dmg.blockmap
+          gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/latest-mac.yml dist/yinliu-music-studio-1.0.6-arm64-mac.zip dist/yinliu-music-studio-1.0.6-arm64-mac.zip.blockmap dist/yinliu-music-studio-1.0.6.dmg dist/yinliu-music-studio-1.0.6.dmg.blockmap
+
+  publish:
+    needs: macos
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Refresh checksums and remove encrypted source
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir release-assets
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir release-assets --pattern 'latest*.yml' --pattern '*.blockmap' --pattern '*.exe' --pattern '*.dmg' --pattern '*.zip'
+          find release-assets -maxdepth 1 -type f ! -name SHA256SUMS.txt ! -name "$BUNDLE_ASSET" -print0 | sort -z | xargs -0 sha256sum | sed 's#  release-assets/#  #' > release-assets/SHA256SUMS.txt
+          gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --clobber release-assets/SHA256SUMS.txt
+          asset_id="$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq '.[] | select(.tag_name == "v1.0.6") | .assets[] | select(.name == "laura-v106-build-source.enc") | .id')"
+          if [ -n "$asset_id" ]; then gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id"; fi
+      - name: Publish as latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
