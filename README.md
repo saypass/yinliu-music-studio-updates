@@ -2,7 +2,7 @@
 
 公开安装包与更新补丁下载仓库，源码保存在私有仓库。
 
-## v1.0.7 下载（无 Key 版）
+## v1.0.7 下载
 
 - [Windows x64 安装包](https://github.com/saypass/yinliu-music-studio-updates/releases/download/v1.0.7/yinliu-music-studio-setup-1.0.7.exe)
 - [macOS Apple Silicon DMG](https://github.com/saypass/yinliu-music-studio-updates/releases/download/v1.0.7/yinliu-music-studio-1.0.7.dmg)
